@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="de-CH">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="theme-color" content="#2d6a4f">
+  <meta name="description" content="Blind-Menü-Match — gemeinsame GF-Wochenmenüs wählen, ohne die Auswahl des Partners zu sehen.">
+  <title>Blind-Menü-Match</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./css/styles.css">
+  <link rel="apple-touch-icon" href="./icons/icon-180.png">
+  <script src="./config.js"></script>
+</head>
+<body>
+  <header class="appbar">
+    <h1>Blind-Menü-Match</h1>
+    <span id="modeBadge" class="badge">…</span>
+  </header>
+
+  <main>
+    <!-- HOME -->
+    <section id="screenHome" class="screen">
+      <div class="card">
+        <h2>Raum erstellen</h2>
+        <p class="muted">Zwei private Links — je einer pro Partner. Niemand sieht die Auswahl des anderen. Am Ende nur die Schnittmenge.</p>
+        <div class="stack" style="margin-top:12px">
+          <button type="button" id="btnCreate">Raum erstellen</button>
+        </div>
+        <div id="createdLinks" class="links" hidden style="margin-top:14px">
+          <p>Raum: <strong id="roomIdLabel"></strong></p>
+          <label>Link Partner A</label>
+          <div class="row">
+            <input id="urlA" type="text" readonly>
+            <button type="button" class="secondary" id="btnCopyA" style="flex:0 0 auto">Kopieren</button>
+          </div>
+          <label>Link Partner B</label>
+          <div class="row">
+            <input id="urlB" type="text" readonly>
+            <button type="button" class="secondary" id="btnCopyB" style="flex:0 0 auto">Kopieren</button>
+          </div>
+          <p class="muted" style="margin-top:10px">Auf dem iPhone: Link öffnen → Teilen → «Zum Home-Bildschirm».</p>
+        </div>
+      </div>
+
+      <div class="card" id="homeDemo">
+        <h2>Demo Sync-Code</h2>
+        <p class="muted">Ohne Supabase: auf einem Gerät beide Partner-Links öffnen (localStorage). Für zwei getrennte Geräte Sync-Code austauschen — echter Live-Sync braucht ein kostenloses Supabase-Projekt (siehe README).</p>
+        <textarea id="syncImport" placeholder="Sync-Code hier einfügen…"></textarea>
+        <button type="button" class="secondary" id="btnImportSync" style="margin-top:8px;width:100%">Sync-Code importieren</button>
+      </div>
+    </section>
+
+    <!-- VOTE -->
+    <section id="screenVote" class="screen" hidden>
+      <div class="hint" id="voteBanner">
+        <div><strong id="partnerLabel">Partner</strong> · <span id="voteTitle">Blind wählen</span></div>
+        <div id="voteHint" class="muted" style="margin-top:4px"></div>
+      </div>
+      <div id="menuGrid" class="menu-grid"></div>
+    </section>
+
+    <!-- WAIT -->
+    <section id="screenWait" class="screen" hidden>
+      <div class="card">
+        <h2 class="wait-pulse">Warten…</h2>
+        <p>Du hast festgelegt. Warte auf <strong id="waitPartner">Partner</strong>.</p>
+        <p id="waitStatus" class="muted">Status wird aktualisiert…</p>
+        <button type="button" class="secondary" id="btnRefresh" style="width:100%;margin-top:8px">Jetzt prüfen</button>
+      </div>
+      <div class="card" id="demoSync" hidden>
+        <h2>Demo: Sync-Code</h2>
+        <p class="muted">Exportiere nach dem Festlegen und sende den Code an das andere Gerät. Dort importieren (auch auf dem Home-Screen).</p>
+        <button type="button" id="btnExportSync" style="width:100%">Sync-Code exportieren</button>
+        <textarea id="syncExport" hidden style="margin-top:8px"></textarea>
+        <textarea id="syncImportWait" placeholder="Fremden Sync-Code einfügen…" style="margin-top:8px"></textarea>
+        <button type="button" class="secondary" id="btnImportSyncWait" style="width:100%;margin-top:8px">Importieren &amp; prüfen</button>
+      </div>
+    </section>
+
+    <!-- RESULT -->
+    <section id="screenResult" class="screen" hidden>
+      <div class="card">
+        <h2>Eure 5 Abendessen</h2>
+        <p class="muted">Nur gemeinsame Matches — die Einzelwahllisten bleiben geheim. Keine Bestellung, nur Planung.</p>
+        <ul id="dinnerList"></ul>
+      </div>
+      <div class="card" id="unusedBox" hidden>
+        <h2>Weitere Matches (ungenutzt)</h2>
+        <ul id="unusedList"></ul>
+      </div>
+      <div class="card">
+        <h2>Einkaufsliste</h2>
+        <div class="total" id="shopTotal">CHF 0.00</div>
+        <p class="muted" id="shopMeta"></p>
+        <p class="muted">Volle Packpreise · shareKey-Dedupe · kurze Bern-Cluster-Route</p>
+        <h3 style="margin:14px 0 8px;font-size:1rem">Route</h3>
+        <ul id="routeList"></ul>
+        <h3 style="margin:14px 0 8px;font-size:1rem">Grundstock (nicht in Summe)</h3>
+        <ul id="staplesList"></ul>
+      </div>
+    </section>
+  </main>
+
+  <div id="stickyBar" hidden>
+    <div class="count" id="pickCount">0/8</div>
+    <button type="button" id="btnLock" style="flex:1">Festlegen</button>
+  </div>
+
+  <script type="module" src="./js/app.js"></script>
+  <script>
+    // show sticky only on vote screen
+    const bar = document.getElementById("stickyBar");
+    const vote = document.getElementById("screenVote");
+    const obs = new MutationObserver(() => { bar.hidden = vote.hidden; });
+    obs.observe(vote, { attributes: true, attributeFilter: ["hidden"] });
+  </script>
+</body>
+</html>
