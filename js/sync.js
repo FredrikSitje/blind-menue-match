@@ -1,4 +1,4 @@
-/** Sync: Supabase or localStorage + Sync-Code */
+/** Sync: Supabase via fetch RPC (no CDN) or localStorage + Sync-Code */
 const LS_PREFIX = "bmm_room_";
 
 function cfg() {
@@ -13,7 +13,6 @@ export function hasSupabase() {
 export function syncModeLabel() {
   return hasSupabase() ? "Supabase Live-Sync" : "Demo (localStorage + Sync-Code)";
 }
-let _client = null;
 
 function randomToken(len) {
   if (len === undefined) len = 10;
@@ -22,15 +21,58 @@ function randomToken(len) {
   return Array.from(bytes).map(function(b) { return alphabet[b % alphabet.length]; }).join("");
 }
 
-async function getClient() {
-  if (!hasSupabase()) return null;
-  if (_client) return _client;
-  const host = "cdn." + "jsdelivr.net";
-  const path = "/npm/@supabase/supabase-js@2/+esm";
-  const mod = await import("https://" + host + path);
+async function rpc(name, args) {
   const c = cfg();
-  _client = mod.createClient(c.supabaseUrl, c.supabaseAnonKey);
-  return _client;
+  const url = c.supabaseUrl.replace(/\/$/, "") + "/rest/v1/rpc/" + name;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "apikey": c.supabaseAnonKey,
+      "Authorization": "Bearer " + c.supabaseAnonKey,
+      "Content-Type": "application/json",
+      "Prefer": "return=representation"
+    },
+    body: JSON.stringify(args || {})
+  });
+  const text = await res.text();
+  var data = null;
+  try { data = text ? JSON.parse(text) : null; } catch (e) {
+    throw new Error("Ungueltige Server-Antwort (" + res.status + ")");
+  }
+  if (!res.ok) {
+    const msg = (data && (data.message || data.error_description || data.hint)) || ("HTTP " + res.status);
+    throw new Error(msg);
+  }
+  return data;
+}
+
+async function restSelectSubmissions(roomId, partner, key, round) {
+  const c = cfg();
+  const q = new URLSearchParams({
+    select: "menu_ids,locked,round",
+    room_id: "eq." + roomId,
+    partner: "eq." + partner,
+    round: "eq." + String(round),
+    partner_key: "eq." + key
+  });
+  const url = c.supabaseUrl.replace(/\/$/, "") + "/rest/v1/submissions?" + q.toString();
+  const res = await fetch(url, {
+    headers: {
+      "apikey": c.supabaseAnonKey,
+      "Authorization": "Bearer " + c.supabaseAnonKey,
+      "Accept": "application/json"
+    }
+  });
+  const text = await res.text();
+  var data = [];
+  try { data = text ? JSON.parse(text) : []; } catch (e) {
+    throw new Error("Ungueltige Server-Antwort (" + res.status + ")");
+  }
+  if (!res.ok) {
+    const msg = (data && data.message) || ("HTTP " + res.status);
+    throw new Error(msg);
+  }
+  return Array.isArray(data) && data.length ? data[0] : null;
 }
 
 export function makeRoomIds() {
@@ -52,17 +94,7 @@ function lsSave(room) {
 }
 function subKey(partner, round) { return partner + ":" + round; }
 
-export async function createRoom() {
-  const ids = makeRoomIds();
-  const roomId = ids.roomId, keyA = ids.keyA, keyB = ids.keyB;
-  if (hasSupabase()) {
-    const sb = await getClient();
-    const result = await sb.rpc("create_room", { p_room_id: roomId, p_key_a: keyA, p_key_b: keyB });
-    if (result.error) throw new Error(result.error.message);
-    if (result.data && result.data.ok === false) throw new Error(result.data.error || "create failed");
-  } else {
-    lsSave(emptyRoom(roomId, keyA, keyB));
-  }
+function partnerUrls(roomId, keyA, keyB) {
   const base = new URL(".", location.href).href;
   return {
     roomId: roomId, keyA: keyA, keyB: keyB,
@@ -71,12 +103,21 @@ export async function createRoom() {
   };
 }
 
+export async function createRoom() {
+  const ids = makeRoomIds();
+  const roomId = ids.roomId, keyA = ids.keyA, keyB = ids.keyB;
+  if (hasSupabase()) {
+    const data = await rpc("create_room", { p_room_id: roomId, p_key_a: keyA, p_key_b: keyB });
+    if (data && data.ok === false) throw new Error(data.error || "create failed");
+  } else {
+    lsSave(emptyRoom(roomId, keyA, keyB));
+  }
+  return partnerUrls(roomId, keyA, keyB);
+}
+
 export async function getRoomStatus(roomId) {
   if (hasSupabase()) {
-    const sb = await getClient();
-    const result = await sb.rpc("get_room_status", { p_room_id: roomId });
-    if (result.error) throw new Error(result.error.message);
-    return result.data;
+    return await rpc("get_room_status", { p_room_id: roomId });
   }
   const room = lsLoad(roomId);
   if (!room) return { ok: false, error: "room_not_found" };
@@ -96,10 +137,8 @@ export async function getRoomStatus(roomId) {
 
 export async function getOwnSubmission(roomId, partner, key, round) {
   if (hasSupabase()) {
-    const sb = await getClient();
-    const result = await sb.from("submissions").select("menu_ids, locked, round").eq("room_id", roomId).eq("partner", partner).eq("round", round).eq("partner_key", key).maybeSingle();
-    if (result.error) throw new Error(result.error.message);
-    return result.data || { menu_ids: [], locked: false, round: round };
+    const row = await restSelectSubmissions(roomId, partner, key, round);
+    return row || { menu_ids: [], locked: false, round: round };
   }
   const room = lsLoad(roomId);
   if (!room) return { menu_ids: [], locked: false, round: round };
@@ -112,10 +151,9 @@ export async function getOwnSubmission(roomId, partner, key, round) {
 export async function submitPicks(roomId, partner, key, menuIds, lock) {
   if (lock === undefined) lock = false;
   if (hasSupabase()) {
-    const sb = await getClient();
-    const result = await sb.rpc("submit_picks", { p_room_id: roomId, p_partner: partner, p_key: key, p_menu_ids: menuIds, p_lock: lock });
-    if (result.error) throw new Error(result.error.message);
-    return result.data;
+    return await rpc("submit_picks", {
+      p_room_id: roomId, p_partner: partner, p_key: key, p_menu_ids: menuIds, p_lock: lock
+    });
   }
   const room = lsLoad(roomId);
   if (!room) throw new Error("room_not_found");
@@ -133,11 +171,8 @@ export async function submitPicks(roomId, partner, key, menuIds, lock) {
 
 export async function getMatches(roomId) {
   if (hasSupabase()) {
-    const sb = await getClient();
-    const result = await sb.rpc("get_matches", { p_room_id: roomId });
-    if (result.error) throw new Error(result.error.message);
-    const data = result.data;
-    let matches = data.matches;
+    const data = await rpc("get_matches", { p_room_id: roomId });
+    let matches = data && data.matches;
     if (typeof matches === "string") { try { matches = JSON.parse(matches); } catch (e) { matches = []; } }
     if (!Array.isArray(matches)) matches = [];
     return Object.assign({}, data, { matches: matches });
@@ -157,10 +192,9 @@ export async function getMatches(roomId) {
 
 export async function startFillRound(roomId, partner, key, accumulatedMatches) {
   if (hasSupabase()) {
-    const sb = await getClient();
-    const result = await sb.rpc("start_fill_round", { p_room_id: roomId, p_partner: partner, p_key: key, p_accumulated_matches: accumulatedMatches });
-    if (result.error) throw new Error(result.error.message);
-    return result.data;
+    return await rpc("start_fill_round", {
+      p_room_id: roomId, p_partner: partner, p_key: key, p_accumulated_matches: accumulatedMatches
+    });
   }
   const room = lsLoad(roomId);
   if (!room) throw new Error("room_not_found");
@@ -175,10 +209,9 @@ export async function startFillRound(roomId, partner, key, accumulatedMatches) {
 
 export async function finalizeDinners(roomId, partner, key, dinnerIds, unusedIds) {
   if (hasSupabase()) {
-    const sb = await getClient();
-    const result = await sb.rpc("finalize_dinners", { p_room_id: roomId, p_partner: partner, p_key: key, p_dinner_ids: dinnerIds, p_unused_ids: unusedIds });
-    if (result.error) throw new Error(result.error.message);
-    return result.data;
+    return await rpc("finalize_dinners", {
+      p_room_id: roomId, p_partner: partner, p_key: key, p_dinner_ids: dinnerIds, p_unused_ids: unusedIds
+    });
   }
   const room = lsLoad(roomId);
   if (!room) throw new Error("room_not_found");

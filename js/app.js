@@ -96,17 +96,24 @@ function toggleMenu(id, need) {
 }
 
 async function onCreateRoom() {
-  qs("#btnCreate").disabled = true;
+  const btn = qs("#btnCreate");
+  btn.disabled = true;
+  const prev = btn.textContent;
+  btn.textContent = "Erstelle…";
   try {
     const room = await createRoom();
     qs("#urlA").value = room.urlA;
     qs("#urlB").value = room.urlB;
     qs("#createdLinks").hidden = false;
     qs("#roomIdLabel").textContent = room.roomId;
+    btn.textContent = "Raum erstellt";
   } catch (e) {
-    alert("Raum erstellen fehlgeschlagen: " + e.message);
+    btn.textContent = prev;
+    alert("Raum erstellen fehlgeschlagen: " + (e && e.message ? e.message : e));
+    console.error(e);
   } finally {
-    qs("#btnCreate").disabled = false;
+    btn.disabled = false;
+    setTimeout(function() { if (btn.textContent === "Raum erstellt") btn.textContent = prev; }, 1500);
   }
 }
 

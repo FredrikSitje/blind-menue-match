@@ -1,4 +1,4 @@
-const CACHE = "bmm-v2";
+const CACHE = "bmm-v3";
 const ASSETS = [
   "./",
   "./index.html",
