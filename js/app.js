@@ -76,9 +76,9 @@ function renderMenus() {
     card.disabled = state.locked;
     card.setAttribute("data-id", menu.id);
     const est = menuAktionEstimate(menu);
-    const tags = menu.tags.map(function(t) { return "<span class=\\"tag\\">" + labelTag(t) + "</span>"; }).join("");
-    const stores = menu.stores.map(function(s) { return "<span class=\\"tag store\\">" + s + "</span>"; }).join("");
-    card.innerHTML = "<div class=\\"card-top\\"><span class=\\"check\\">" + (state.selected.has(menu.id) ? "✓" : "") + "</span><div><strong>" + menu.title + "</strong><p class=\\"desc\\">" + menu.short + "</p></div></div><div class=\\"tags\\">" + tags + stores + "<span class=\\"tag\\">GF</span></div><div class=\\"price\\">Pack ca. CHF " + formatCHF(est) + "</div>";
+    const tags = menu.tags.map(function(t) { return "<span class=\"tag\">" + labelTag(t) + "</span>"; }).join("");
+    const stores = menu.stores.map(function(s) { return "<span class=\"tag store\">" + s + "</span>"; }).join("");
+    card.innerHTML = "<div class=\"card-top\"><span class=\"check\">" + (state.selected.has(menu.id) ? "✓" : "") + "</span><div><strong>" + menu.title + "</strong><p class=\"desc\">" + menu.short + "</p></div></div><div class=\"tags\">" + tags + stores + "<span class=\"tag\">GF</span></div><div class=\"price\">Pack ca. CHF " + formatCHF(est) + "</div>";
     card.addEventListener("click", function() { toggleMenu(menu.id, need); });
     grid.appendChild(card);
   });
@@ -301,11 +301,11 @@ function renderShopping() {
     const km = i === 0 ? "Start" : ("+" + leg.kmFromPrev.toFixed(1) + " km");
     const items = (leg.items || []).map(function(it) {
       const price = it.price != null ? "CHF " + formatCHF(it.price) : "";
-      const risk = it.glutenRisk ? " <span class=\\"warn\\">⚠ " + it.glutenRisk + "</span>" : "";
+      const risk = it.glutenRisk ? " <span class=\"warn\">⚠ " + it.glutenRisk + "</span>" : "";
       const pack = it.packSize ? " · " + it.packSize : "";
       return "<li>" + it.name + pack + " — <strong>" + price + "</strong>" + risk + "</li>";
     }).join("");
-    li.innerHTML = "<div class=\\"route-head\\"><span class=\\"num\\">" + (i + 1) + "</span><div><strong>" + leg.store.name + "</strong><div class=\\"muted\\">" + leg.store.address + " · " + leg.store.cluster + " · " + km + "</div></div></div><ul class=\\"shop-items\\">" + items + "</ul>";
+    li.innerHTML = "<div class=\"route-head\"><span class=\"num\">" + (i + 1) + "</span><div><strong>" + leg.store.name + "</strong><div class=\"muted\">" + leg.store.address + " · " + leg.store.cluster + " · " + km + "</div></div></div><ul class=\"shop-items\">" + items + "</ul>";
     route.appendChild(li);
   });
   const staples = qs("#staplesList");

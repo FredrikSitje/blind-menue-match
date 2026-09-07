@@ -98,5 +98,9 @@ Preise/Packungen sind Aktions-/Theke-Annahmen — im Laden prüfen.
 
 ```bash
 cd /workspace/blind-menue-match
-node --check js/app.js && node --check js/data.js && node --check js/shopping.js && node --check js/sync.js && node --check sw.js
+node scripts/check-syntax.mjs
 ```
+
+Der Syntaxcheck prüft ES-Module explizit und läuft auch in GitHub Actions.
+Nach Änderungen an gecachten Assets die Cache-Version in `sw.js` erhöhen.
+Browser-Smoke-Test: Raum erstellen → Raum-ID und beide Links sichtbar → beide Kopieren-Buttons prüfen → beide Links öffnen und jeweils 20 Menüs / 0 von 8 Auswahlen sehen.
