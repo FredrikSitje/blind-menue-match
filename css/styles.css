@@ -119,3 +119,10 @@ textarea { min-height: 96px; font-family: ui-monospace, SFMono-Regular, Menlo, m
   font-size: 1.4rem; font-weight: 800; color: var(--accent); margin: 4px 0 8px;
 }
 .links label { font-size: .85rem; color: var(--muted); display: block; margin: 8px 0 4px; }
+
+[hidden] { display: none !important; }
+.account-bar { max-width: 640px; margin: 0 auto; padding: 8px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: .85rem; }
+.account-bar button { padding: 8px 12px; }
+form.stack { margin-top: 16px; }
+form label { font-weight: 600; }
+#authMessage, #passwordMessage { margin-bottom: 0; }

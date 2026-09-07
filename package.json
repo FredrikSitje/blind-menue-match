@@ -1,0 +1,29 @@
+{
+  "name": "blind-menue-match",
+  "version": "1.0.0",
+  "description": "Mobile-first **deutsche PWA** für blindes Abstimmen über glutenfreie Wochenmenüs (Bern).   Zwei Partner wählen je 8 Menüs — **niemand sieht die Auswahl des anderen**. Am Ende erscheint nur die **Schnittmenge**, aufgelöst auf **genau 5 Abendessen**, plus Einkaufsliste (volle Packpreise, shareKey-Dedupe, kurze Cluster-Route).",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node scripts/check-syntax.mjs && node --test tests/*.test.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FredrikSitje/blind-menue-match.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/FredrikSitje/blind-menue-match/issues"
+  },
+  "homepage": "https://github.com/FredrikSitje/blind-menue-match#readme",
+  "dependencies": {
+    "@supabase/supabase-js": "2.116.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "esbuild": "0.28.2"
+  },
+  "private": true
+}

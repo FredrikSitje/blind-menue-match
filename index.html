@@ -6,6 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="theme-color" content="#2d6a4f">
+  <meta name="referrer" content="no-referrer">
   <meta name="description" content="Blind-Menü-Match — gemeinsame GF-Wochenmenüs wählen, ohne die Auswahl des Partners zu sehen.">
   <title>Blind-Menü-Match</title>
   <link rel="manifest" href="./manifest.webmanifest">
@@ -19,9 +20,48 @@
     <span id="modeBadge" class="badge">…</span>
   </header>
 
+  <div id="accountBar" class="account-bar" hidden>
+    <span id="accountLabel"></span><button id="btnLogout" type="button" class="secondary">Abmelden</button>
+  </div>
   <main>
+    <section id="screenAuth" class="screen">
+      <div class="card">
+        <h2>Willkommen zurück</h2>
+        <p class="muted">Melde dich an, um eure Wochenmenüs gemeinsam zu planen. Der Zugang ist nur für freigeschaltete Konten möglich.</p>
+        <form id="loginForm" class="stack">
+          <label for="loginEmail">E-Mail</label>
+          <input id="loginEmail" type="email" autocomplete="username" required>
+          <label for="loginPassword">Passwort</label>
+          <input id="loginPassword" type="password" autocomplete="current-password" required>
+          <button id="btnLogin" type="submit">Anmelden</button>
+          <button id="btnResetPassword" class="secondary" type="button">Passwort vergessen?</button>
+        </form>
+        <p id="authMessage" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+    <section id="screenPassword" class="screen" hidden>
+      <div class="card">
+        <h2>Dein Passwort einrichten</h2>
+        <p class="muted">Wähle ein persönliches Passwort mit mindestens 12 Zeichen.</p>
+        <form id="passwordForm" class="stack">
+          <label for="newPassword">Neues Passwort</label>
+          <input id="newPassword" type="password" minlength="12" autocomplete="new-password" required>
+          <label for="repeatPassword">Passwort wiederholen</label>
+          <input id="repeatPassword" type="password" minlength="12" autocomplete="new-password" required>
+          <button id="btnSavePassword" type="submit">Passwort speichern</button>
+        </form>
+        <p id="passwordMessage" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+    <section id="screenAccess" class="screen" hidden>
+      <div class="card">
+        <h2>Zugriff nicht möglich</h2>
+        <p id="accessMessage" role="alert"></p>
+        <a href="./">Zur Startseite</a>
+      </div>
+    </section>
     <!-- HOME -->
-    <section id="screenHome" class="screen">
+    <section id="screenHome" class="screen" hidden>
       <div class="card">
         <h2>Raum erstellen</h2>
         <p class="muted">Zwei private Links — je einer pro Partner. Niemand sieht die Auswahl des anderen. Am Ende nur die Schnittmenge.</p>
@@ -30,12 +70,12 @@
         </div>
         <div id="createdLinks" class="links" hidden style="margin-top:14px">
           <p>Raum: <strong id="roomIdLabel"></strong></p>
-          <label>Link Partner A</label>
+          <label for="urlA">Link Partner A</label>
           <div class="row">
             <input id="urlA" type="text" readonly>
             <button type="button" class="secondary" id="btnCopyA" style="flex:0 0 auto">Kopieren</button>
           </div>
-          <label>Link Partner B</label>
+          <label for="urlB">Link Partner B</label>
           <div class="row">
             <input id="urlB" type="text" readonly>
             <button type="button" class="secondary" id="btnCopyB" style="flex:0 0 auto">Kopieren</button>
@@ -44,12 +84,6 @@
         </div>
       </div>
 
-      <div class="card" id="homeDemo">
-        <h2>Demo Sync-Code</h2>
-        <p class="muted">Ohne Supabase: auf einem Gerät beide Partner-Links öffnen (localStorage). Für zwei getrennte Geräte Sync-Code austauschen — echter Live-Sync braucht ein kostenloses Supabase-Projekt (siehe README).</p>
-        <textarea id="syncImport" placeholder="Sync-Code hier einfügen…"></textarea>
-        <button type="button" class="secondary" id="btnImportSync" style="margin-top:8px;width:100%">Sync-Code importieren</button>
-      </div>
     </section>
 
     <!-- VOTE -->
@@ -68,14 +102,6 @@
         <p>Du hast festgelegt. Warte auf <strong id="waitPartner">Partner</strong>.</p>
         <p id="waitStatus" class="muted">Status wird aktualisiert…</p>
         <button type="button" class="secondary" id="btnRefresh" style="width:100%;margin-top:8px">Jetzt prüfen</button>
-      </div>
-      <div class="card" id="demoSync" hidden>
-        <h2>Demo: Sync-Code</h2>
-        <p class="muted">Exportiere nach dem Festlegen und sende den Code an das andere Gerät. Dort importieren (auch auf dem Home-Screen).</p>
-        <button type="button" id="btnExportSync" style="width:100%">Sync-Code exportieren</button>
-        <textarea id="syncExport" hidden style="margin-top:8px"></textarea>
-        <textarea id="syncImportWait" placeholder="Fremden Sync-Code einfügen…" style="margin-top:8px"></textarea>
-        <button type="button" class="secondary" id="btnImportSyncWait" style="width:100%;margin-top:8px">Importieren &amp; prüfen</button>
       </div>
     </section>
 

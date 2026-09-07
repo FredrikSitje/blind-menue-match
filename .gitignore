@@ -1,0 +1,6 @@
+node_modules/
+.env
+.env.*
+!config.example.js
+test-results/
+tests/deployment-preview.html

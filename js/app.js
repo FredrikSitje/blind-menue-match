@@ -2,10 +2,20 @@
 import { MENUS, menuById, labelTag } from "./data.js";
 import { computePlan, formatCHF, menuAktionEstimate, stablePick } from "./shopping.js";
 import {
-  hasSupabase, syncModeLabel, createRoom, getRoomStatus, getOwnSubmission,
-  submitPicks, getMatches, startFillRound, finalizeDinners,
-  exportSyncCode, importSyncCode, ensureLocalRoom
+  accessStatus, createRoom, getRoomStatus, getOwnSubmission,
+  submitPicks, getMatches, startFillRound, finalizeDinners
 } from "./sync.js";
+import {
+  configured, authClient, currentSession, signIn, signOut, incomingPasswordSetup,
+  requestPasswordReset, updatePassword
+} from "./auth.js";
+
+let activeUserId = null;
+let authReady = false;
+let passwordSetup = incomingPasswordSetup
+  || sessionStorage.getItem('bmm_password_setup') === 'yes';
+if (passwordSetup) sessionStorage.setItem('bmm_password_setup','yes');
+
 
 const TARGET = 5;
 const PICK_N = 8;
@@ -32,12 +42,6 @@ function showScreen(id) {
   qsa(".screen").forEach(function(el) { el.hidden = el.id !== id; });
 }
 
-function setModeBadge() {
-  const el = qs("#modeBadge");
-  if (!el) return;
-  el.textContent = syncModeLabel();
-  el.className = "badge " + (hasSupabase() ? "live" : "demo");
-}
 
 function availableMenus() {
   return MENUS.filter(function(m) {
@@ -132,8 +136,6 @@ async function onLock() {
   const ids = Array.from(state.selected).sort();
   qs("#btnLock").disabled = true;
   try {
-    if (!hasSupabase()) ensureLocalRoom(state.roomId, state.partner, state.key);
-    await submitPicks(state.roomId, state.partner, state.key, ids, false);
     const res = await submitPicks(state.roomId, state.partner, state.key, ids, true);
     if (res && res.ok === false) throw new Error(res.error || "lock failed");
     state.locked = true;
@@ -148,15 +150,7 @@ async function onLock() {
 function enterWaiting() {
   showScreen("screenWait");
   qs("#waitPartner").textContent = state.partner === "a" ? "Partner B" : "Partner A";
-  updateDemoSyncPanel();
   startPolling();
-}
-
-function updateDemoSyncPanel() {
-  const panel = qs("#demoSync");
-  if (panel) panel.hidden = hasSupabase();
-  const home = qs("#homeDemo");
-  if (home) home.hidden = hasSupabase();
 }
 
 function startPolling() {
@@ -313,12 +307,11 @@ function renderShopping() {
 }
 
 async function enterVoteRoom() {
-  showScreen("screenVote");
   qs("#partnerLabel").textContent = "Partner " + state.partner.toUpperCase();
   qs("#voteTitle").textContent = "Blind wählen";
   qs("#voteHint").textContent = "Wähle genau " + PICK_N + " Menüs. Die Auswahl des Partners bleibt geheim. Danach Festlegen.";
-  if (!hasSupabase()) ensureLocalRoom(state.roomId, state.partner, state.key);
   try {
+    await getOwnSubmission(state.roomId, state.partner, state.key, 0);
     const st = await getRoomStatus(state.roomId);
     if (st && st.ok) {
       state.fillRound = st.fill_round || 0;
@@ -337,7 +330,8 @@ async function enterVoteRoom() {
       if (own && own.menu_ids) state.selected = new Set(own.menu_ids);
       if (own && own.locked) { state.locked = true; enterWaiting(); return; }
     }
-  } catch (e) { console.warn(e); }
+  } catch (e) { showAccessError(e.message); return; }
+  showScreen("screenVote");
   renderMenus();
 }
 
@@ -345,13 +339,6 @@ function bindHome() {
   qs("#btnCreate").addEventListener("click", onCreateRoom);
   qs("#btnCopyA").addEventListener("click", function() { copyText("#urlA"); });
   qs("#btnCopyB").addEventListener("click", function() { copyText("#urlB"); });
-  qs("#btnImportSync").addEventListener("click", function() {
-    try {
-      const code = qs("#syncImport").value;
-      const room = importSyncCode(code);
-      alert("Sync-Code importiert für Raum " + room.id);
-    } catch (e) { alert(e.message); }
-  });
 }
 
 function bindVote() {
@@ -359,38 +346,119 @@ function bindVote() {
 }
 
 function bindWait() {
-  qs("#btnExportSync").addEventListener("click", function() {
-    try {
-      qs("#syncExport").value = exportSyncCode(state.roomId);
-      qs("#syncExport").hidden = false;
-    } catch (e) { alert(e.message); }
-  });
-  qs("#btnImportSyncWait").addEventListener("click", function() {
-    try {
-      importSyncCode(qs("#syncImportWait").value);
-      alert("Import OK — prüfe Status…");
-      pollOnce();
-    } catch (e) { alert(e.message); }
-  });
   qs("#btnRefresh").addEventListener("click", pollOnce);
 }
 
-async function init() {
-  setModeBadge();
-  updateDemoSyncPanel();
-  bindHome(); bindVote(); bindWait();
-  const params = parseParams();
-  if (params.room && params.p && params.key && (params.p === "a" || params.p === "b")) {
-    state.roomId = params.room;
-    state.partner = params.p;
-    state.key = params.key;
-    await enterVoteRoom();
-  } else {
-    showScreen("screenHome");
-  }
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./sw.js").catch(function() {});
-  }
+function showAccessError(message) {
+  stopPolling();
+  qs('#accessMessage').textContent = message;
+  showScreen('screenAccess');
 }
 
+function bindAuth() {
+  qs('#loginForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = qs('#btnLogin');
+    button.disabled = true;
+    qs('#authMessage').textContent = 'Anmeldung läuft…';
+    try {
+      await signIn(qs('#loginEmail').value, qs('#loginPassword').value);
+      location.reload();
+    } catch (error) {
+      qs('#authMessage').textContent = error.message;
+    } finally {
+      qs('#loginPassword').value = '';
+      button.disabled = false;
+    }
+  });
+  qs('#btnResetPassword').addEventListener('click', async () => {
+    const email = qs('#loginEmail');
+    if (!email.reportValidity()) return;
+    const button = qs('#btnResetPassword'); button.disabled = true;
+    try {
+      await requestPasswordReset(email.value);
+      qs('#authMessage').textContent = 'Falls dein Konto eingerichtet ist, erhältst du eine E-Mail mit einem Link zum Passwortsetzen.';
+    } catch (error) { qs('#authMessage').textContent = error.message; }
+    finally { button.disabled = false; }
+  });
+  qs('#passwordForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const password = qs('#newPassword').value;
+    if (password !== qs('#repeatPassword').value) {
+      qs('#passwordMessage').textContent = 'Die Passwörter stimmen nicht überein.'; return;
+    }
+    const button = qs('#btnSavePassword'); button.disabled = true;
+    try {
+      await updatePassword(password);
+      sessionStorage.removeItem('bmm_password_setup');
+      location.replace(location.pathname + location.search);
+    } catch (error) { qs('#passwordMessage').textContent = error.message; }
+    finally { button.disabled = false; }
+  });
+  qs('#btnLogout').addEventListener('click', async () => {
+    stopPolling();
+    // Remove all private UI immediately, including links and rendered results.
+    document.querySelector('main').hidden = true;
+    qs('#stickyBar').hidden = true;
+    try {
+      await signOut(); sessionStorage.removeItem('bmm_password_setup'); location.reload();
+    } catch {
+      document.querySelector('main').hidden = false;
+      showAccessError('Abmelden fehlgeschlagen. Bitte versuche es erneut.');
+    }
+  });
+}
+
+async function init() {
+  bindAuth(); bindHome(); bindVote(); bindWait();
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(() => {});
+  }
+  if (!configured) {
+    qs('#authMessage').textContent = 'Die Anmeldung ist noch nicht eingerichtet.';
+    qs('#btnLogin').disabled = true; qs('#btnResetPassword').disabled = true;
+    showScreen('screenAuth'); return;
+  }
+  authClient.auth.onAuthStateChange((event, session) => {
+    if (event === 'PASSWORD_RECOVERY') {
+      passwordSetup = true; sessionStorage.setItem('bmm_password_setup','yes');
+      if (authReady && activeUserId) showScreen('screenPassword');
+    }
+    // Account switches and logout in another tab must discard old private DOM.
+    if (authReady && (session?.user?.id || null) !== activeUserId && event !== 'TOKEN_REFRESHED') {
+      document.querySelector('main').hidden = true;
+      qs('#stickyBar').hidden = true;
+      location.reload();
+    }
+  });
+  try {
+    const session = await currentSession();
+    activeUserId = session?.user?.id || null;
+    authReady = true;
+    if (!session) {
+      qs('#modeBadge').textContent = 'Privat';
+      if (location.hash.includes('error')) qs('#authMessage').textContent = 'Der Einrichtungslink ist abgelaufen oder ungültig. Bitte fordere einen neuen Link an.';
+      showScreen('screenAuth'); return;
+    }
+    qs('#accountBar').hidden = false;
+    const access = await accessStatus();
+    qs('#accountLabel').textContent = 'Angemeldet als Partner ' + access.partner.toUpperCase();
+    qs('#modeBadge').textContent = 'Privat · Live-Sync';
+    qs('#modeBadge').className = 'badge live';
+    if (passwordSetup) { showScreen('screenPassword'); return; }
+    const params = parseParams();
+    if (params.room || params.p || params.key) {
+      if (!params.room || !params.key || !['a','b'].includes(params.p)) {
+        showAccessError('Dieser Partner-Link ist unvollständig. Bitte öffne den vollständigen Link.'); return;
+      }
+      if (params.p !== access.partner) {
+        showAccessError('Dieser Link gehört zum anderen Partner. Bitte verwende deinen eigenen Link oder melde dich mit dem passenden Konto an.'); return;
+      }
+      state.roomId=params.room; state.partner=params.p; state.key=params.key;
+      await enterVoteRoom();
+    } else { showScreen('screenHome'); }
+  } catch (error) { showAccessError(error.message); }
+}
+
+window.addEventListener('pageshow', event => { if (event.persisted) location.reload(); });
 init();

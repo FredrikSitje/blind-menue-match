@@ -1,275 +1,54 @@
-/** Sync: Supabase via fetch RPC (no CDN) or localStorage + Sync-Code */
-const LS_PREFIX = "bmm_room_";
+/** All planning data requires an approved, authenticated account. */
+import { sessionHeaders } from './auth.js';
 
-function cfg() {
-  return window.BMM_CONFIG || { supabaseUrl: "", supabaseAnonKey: "", pollIntervalMs: 3000 };
-}
-
-export function hasSupabase() {
-  const c = cfg();
-  return !!(c.supabaseUrl && c.supabaseAnonKey && c.supabaseUrl.startsWith("http"));
-}
-
-export function syncModeLabel() {
-  return hasSupabase() ? "Supabase Live-Sync" : "Demo (localStorage + Sync-Code)";
-}
-
-function randomToken(len) {
-  if (len === undefined) len = 10;
-  const alphabet = "abcdefghijkmnopqrstuvwxyz23456789";
-  const bytes = crypto.getRandomValues(new Uint8Array(len));
-  return Array.from(bytes).map(function(b) { return alphabet[b % alphabet.length]; }).join("");
-}
-
-async function rpc(name, args) {
-  const c = cfg();
-  const url = c.supabaseUrl.replace(/\/$/, "") + "/rest/v1/rpc/" + name;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "apikey": c.supabaseAnonKey,
-      "Authorization": "Bearer " + c.supabaseAnonKey,
-      "Content-Type": "application/json",
-      "Prefer": "return=representation"
-    },
-    body: JSON.stringify(args || {})
+export async function rpc(name, args = {}) {
+  const config = window.BMM_CONFIG;
+  const res = await fetch(`${config.supabaseUrl.replace(/\/$/, '')}/rest/v1/rpc/${name}`, {
+    method: 'POST', cache: 'no-store',
+    headers: { ...await sessionHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(args),
   });
-  const text = await res.text();
-  var data = null;
-  try { data = text ? JSON.parse(text) : null; } catch (e) {
-    throw new Error("Ungueltige Server-Antwort (" + res.status + ")");
-  }
-  if (!res.ok) {
-    const msg = (data && (data.message || data.error_description || data.hint)) || ("HTTP " + res.status);
-    throw new Error(msg);
+  const data = await res.json();
+  if (!res.ok || data?.ok === false) {
+    if (res.status === 401 || res.status === 403) {
+      throw new Error('Kein Zugriff. Bitte melde dich mit deinem freigeschalteten Konto an und verwende deinen eigenen Partner-Link.');
+    }
+    throw new Error(data?.error || data?.message || `Serverfehler (${res.status})`);
   }
   return data;
 }
 
-async function restSelectSubmissions(roomId, partner, key, round) {
-  const c = cfg();
-  const q = new URLSearchParams({
-    select: "menu_ids,locked,round",
-    room_id: "eq." + roomId,
-    partner: "eq." + partner,
-    round: "eq." + String(round),
-    partner_key: "eq." + key
-  });
-  const url = c.supabaseUrl.replace(/\/$/, "") + "/rest/v1/submissions?" + q.toString();
-  const res = await fetch(url, {
-    headers: {
-      "apikey": c.supabaseAnonKey,
-      "Authorization": "Bearer " + c.supabaseAnonKey,
-      "Accept": "application/json"
-    }
-  });
-  const text = await res.text();
-  var data = [];
-  try { data = text ? JSON.parse(text) : []; } catch (e) {
-    throw new Error("Ungueltige Server-Antwort (" + res.status + ")");
+function randomToken(length) {
+  return Array.from(crypto.getRandomValues(new Uint8Array(length)), b => b.toString(16).padStart(2, '0')).join('');
+}
+
+export function partnerUrls(roomId, keyA, keyB) {
+  const base = new URL('.', location.href);
+  function link(partner, key) {
+    const url = new URL(base);
+    url.search = new URLSearchParams({ room: roomId, p: partner, key }).toString();
+    return url.href;
   }
-  if (!res.ok) {
-    const msg = (data && data.message) || ("HTTP " + res.status);
-    throw new Error(msg);
-  }
-  return Array.isArray(data) && data.length ? data[0] : null;
-}
-
-export function makeRoomIds() {
-  return { roomId: "r" + randomToken(8), keyA: "ka" + randomToken(12), keyB: "kb" + randomToken(12) };
-}
-
-function emptyRoom(roomId, keyA, keyB) {
-  return { id: roomId, key_a: keyA, key_b: keyB, phase: "voting", fill_round: 0, dinner_ids: null, unused_ids: null, accumulated_ids: [], submissions: {} };
-}
-
-function lsLoad(roomId) {
-  try {
-    const raw = localStorage.getItem(LS_PREFIX + roomId);
-    return raw ? JSON.parse(raw) : null;
-  } catch (e) { return null; }
-}
-function lsSave(room) {
-  localStorage.setItem(LS_PREFIX + room.id, JSON.stringify(room));
-}
-function subKey(partner, round) { return partner + ":" + round; }
-
-function partnerUrls(roomId, keyA, keyB) {
-  const base = new URL(".", location.href).href;
-  return {
-    roomId: roomId, keyA: keyA, keyB: keyB,
-    urlA: base + "?room=" + encodeURIComponent(roomId) + "&p=a&key=" + encodeURIComponent(keyA),
-    urlB: base + "?room=" + encodeURIComponent(roomId) + "&p=b&key=" + encodeURIComponent(keyB)
-  };
+  return { roomId, urlA: link('a', keyA), urlB: link('b', keyB) };
 }
 
 export async function createRoom() {
-  const ids = makeRoomIds();
-  const roomId = ids.roomId, keyA = ids.keyA, keyB = ids.keyB;
-  if (hasSupabase()) {
-    const data = await rpc("create_room", { p_room_id: roomId, p_key_a: keyA, p_key_b: keyB });
-    if (data && data.ok === false) throw new Error(data.error || "create failed");
-  } else {
-    lsSave(emptyRoom(roomId, keyA, keyB));
-  }
+  const roomId = 'r' + randomToken(12), keyA = 'ka' + randomToken(24), keyB = 'kb' + randomToken(24);
+  await rpc('create_room', { p_room_id: roomId, p_key_a: keyA, p_key_b: keyB });
   return partnerUrls(roomId, keyA, keyB);
 }
-
-export async function getRoomStatus(roomId) {
-  if (hasSupabase()) {
-    return await rpc("get_room_status", { p_room_id: roomId });
-  }
-  const room = lsLoad(roomId);
-  if (!room) return { ok: false, error: "room_not_found" };
-  const rnd = room.fill_round;
-  const a = room.submissions[subKey("a", rnd)];
-  const b = room.submissions[subKey("b", rnd)];
-  return {
-    ok: true, phase: room.phase, fill_round: room.fill_round,
-    dinner_ids: room.dinner_ids, unused_ids: room.unused_ids,
-    accumulated_ids: room.accumulated_ids || [],
-    a_locked: !!(a && a.locked), b_locked: !!(b && b.locked),
-    a_count: a ? (a.menu_ids || []).length : 0,
-    b_count: b ? (b.menu_ids || []).length : 0,
-    both_locked: !!(a && a.locked && b && b.locked)
-  };
-}
-
-export async function getOwnSubmission(roomId, partner, key, round) {
-  if (hasSupabase()) {
-    const row = await restSelectSubmissions(roomId, partner, key, round);
-    return row || { menu_ids: [], locked: false, round: round };
-  }
-  const room = lsLoad(roomId);
-  if (!room) return { menu_ids: [], locked: false, round: round };
-  const expected = partner === "a" ? room.key_a : room.key_b;
-  if (key !== expected) throw new Error("bad_key");
-  const s = room.submissions[subKey(partner, round)];
-  return s ? { menu_ids: s.menu_ids, locked: s.locked, round: round } : { menu_ids: [], locked: false, round: round };
-}
-
-export async function submitPicks(roomId, partner, key, menuIds, lock) {
-  if (lock === undefined) lock = false;
-  if (hasSupabase()) {
-    return await rpc("submit_picks", {
-      p_room_id: roomId, p_partner: partner, p_key: key, p_menu_ids: menuIds, p_lock: lock
-    });
-  }
-  const room = lsLoad(roomId);
-  if (!room) throw new Error("room_not_found");
-  const expected = partner === "a" ? room.key_a : room.key_b;
-  if (key !== expected) throw new Error("bad_key");
-  if (room.phase === "done") throw new Error("room_done");
-  const rnd = room.fill_round;
-  const sk = subKey(partner, rnd);
-  const existing = room.submissions[sk];
-  if (existing && existing.locked) return { ok: true, locked: true, round: rnd, note: "already_locked" };
-  room.submissions[sk] = { menu_ids: menuIds.slice(), locked: !!lock, partner_key: key };
-  lsSave(room);
-  return { ok: true, locked: !!lock, round: rnd };
-}
-
-export async function getMatches(roomId) {
-  if (hasSupabase()) {
-    const data = await rpc("get_matches", { p_room_id: roomId });
-    let matches = data && data.matches;
-    if (typeof matches === "string") { try { matches = JSON.parse(matches); } catch (e) { matches = []; } }
-    if (!Array.isArray(matches)) matches = [];
-    return Object.assign({}, data, { matches: matches });
-  }
-  const room = lsLoad(roomId);
-  if (!room) return { ok: false, error: "room_not_found" };
-  const rnd = room.fill_round;
-  const a = room.submissions[subKey("a", rnd)];
-  const b = room.submissions[subKey("b", rnd)];
-  if (!(a && a.locked && b && b.locked)) {
-    return { ok: true, ready: false, phase: room.phase, fill_round: rnd, matches: [], a_locked: !!(a && a.locked), b_locked: !!(b && b.locked), accumulated_ids: room.accumulated_ids || [] };
-  }
-  const setB = new Set(b.menu_ids || []);
-  const matches = (a.menu_ids || []).filter(function(id) { return setB.has(id); }).sort();
-  return { ok: true, ready: true, phase: room.phase, fill_round: rnd, matches: matches, a_locked: true, b_locked: true, dinner_ids: room.dinner_ids, unused_ids: room.unused_ids, accumulated_ids: room.accumulated_ids || [] };
-}
-
-export async function startFillRound(roomId, partner, key, accumulatedMatches) {
-  if (hasSupabase()) {
-    return await rpc("start_fill_round", {
-      p_room_id: roomId, p_partner: partner, p_key: key, p_accumulated_matches: accumulatedMatches
-    });
-  }
-  const room = lsLoad(roomId);
-  if (!room) throw new Error("room_not_found");
-  const expected = partner === "a" ? room.key_a : room.key_b;
-  if (key !== expected) throw new Error("bad_key");
-  room.accumulated_ids = accumulatedMatches.slice();
-  room.fill_round += 1;
-  room.phase = "fill";
-  lsSave(room);
-  return { ok: true, fill_round: room.fill_round };
-}
-
-export async function finalizeDinners(roomId, partner, key, dinnerIds, unusedIds) {
-  if (hasSupabase()) {
-    return await rpc("finalize_dinners", {
-      p_room_id: roomId, p_partner: partner, p_key: key, p_dinner_ids: dinnerIds, p_unused_ids: unusedIds
-    });
-  }
-  const room = lsLoad(roomId);
-  if (!room) throw new Error("room_not_found");
-  const expected = partner === "a" ? room.key_a : room.key_b;
-  if (key !== expected) throw new Error("bad_key");
-  room.phase = "done";
-  room.dinner_ids = dinnerIds.slice();
-  room.unused_ids = unusedIds.slice();
-  room.accumulated_ids = dinnerIds.slice();
-  lsSave(room);
-  return { ok: true };
-}
-
-export function exportSyncCode(roomId) {
-  const room = lsLoad(roomId);
-  if (!room) throw new Error("Kein Raum lokal gefunden");
-  const json = JSON.stringify({ v: 1, room: room });
-  return btoa(unescape(encodeURIComponent(json)));
-}
-
-export function importSyncCode(code) {
-  const trimmed = code.trim().replace(/\s+/g, "");
-  var payload;
-  try { payload = JSON.parse(decodeURIComponent(escape(atob(trimmed)))); }
-  catch (e) { throw new Error("Ungueltiger Sync-Code"); }
-  if (!payload || !payload.room || !payload.room.id) throw new Error("Ungueltiger Sync-Code");
-  const incoming = payload.room;
-  const existing = lsLoad(incoming.id);
-  if (existing) { const merged = mergeRooms(existing, incoming); lsSave(merged); return merged; }
-  lsSave(incoming);
-  return incoming;
-}
-
-function mergeRooms(a, b) {
-  const out = Object.assign({}, a);
-  if ((b.fill_round || 0) > (a.fill_round || 0)) { out.fill_round = b.fill_round; out.phase = b.phase; }
-  if (b.phase === "done") { out.phase = "done"; out.dinner_ids = b.dinner_ids; out.unused_ids = b.unused_ids; }
-  if ((b.accumulated_ids || []).length > (a.accumulated_ids || []).length) out.accumulated_ids = b.accumulated_ids;
-  out.submissions = Object.assign({}, a.submissions);
-  Object.keys(b.submissions || {}).forEach(function(k) {
-    const v = b.submissions[k];
-    const cur = out.submissions[k];
-    if (!cur || (v.locked && !cur.locked) || (v.locked && cur.locked)) out.submissions[k] = v;
-  });
-  return out;
-}
-
-export function ensureLocalRoom(roomId, partner, key) {
-  var room = lsLoad(roomId);
-  if (room) {
-    if (partner === "a") room.key_a = key;
-    if (partner === "b") room.key_b = key;
-    lsSave(room);
-    return room;
-  }
-  const keyA = partner === "a" ? key : "pending_a";
-  const keyB = partner === "b" ? key : "pending_b";
-  room = emptyRoom(roomId, keyA, keyB);
-  lsSave(room);
-  return room;
-}
+export const accessStatus = () => rpc('access_status');
+export const getRoomStatus = roomId => rpc('get_room_status', { p_room_id: roomId });
+export const getMatches = roomId => rpc('get_matches', { p_room_id: roomId });
+export const getOwnSubmission = (roomId, partner, key, round) => rpc('get_own_submission', {
+  p_room_id: roomId, p_partner: partner, p_key: key, p_round: round,
+});
+export const submitPicks = (roomId, partner, key, ids, lock = false) => rpc('submit_picks', {
+  p_room_id: roomId, p_partner: partner, p_key: key, p_menu_ids: ids, p_lock: lock,
+});
+export const startFillRound = (roomId, partner, key, accumulated) => rpc('start_fill_round', {
+  p_room_id: roomId, p_partner: partner, p_key: key, p_accumulated_matches: accumulated,
+});
+export const finalizeDinners = (roomId, partner, key, dinners, unused) => rpc('finalize_dinners', {
+  p_room_id: roomId, p_partner: partner, p_key: key, p_dinner_ids: dinners, p_unused_ids: unused,
+});
