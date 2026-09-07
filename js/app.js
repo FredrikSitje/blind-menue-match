@@ -147,8 +147,9 @@ function enterWaiting() {
 
 function updateDemoSyncPanel() {
   const panel = qs("#demoSync");
-  if (!panel) return;
-  panel.hidden = hasSupabase();
+  if (panel) panel.hidden = hasSupabase();
+  const home = qs("#homeDemo");
+  if (home) home.hidden = hasSupabase();
 }
 
 function startPolling() {
@@ -369,6 +370,7 @@ function bindWait() {
 
 async function init() {
   setModeBadge();
+  updateDemoSyncPanel();
   bindHome(); bindVote(); bindWait();
   const params = parseParams();
   if (params.room && params.p && params.key && (params.p === "a" || params.p === "b")) {

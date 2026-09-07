@@ -63,7 +63,7 @@ export async function createRoom() {
   } else {
     lsSave(emptyRoom(roomId, keyA, keyB));
   }
-  const base = location.origin + location.pathname;
+  const base = new URL(".", location.href).href;
   return {
     roomId: roomId, keyA: keyA, keyB: keyB,
     urlA: base + "?room=" + encodeURIComponent(roomId) + "&p=a&key=" + encodeURIComponent(keyA),
